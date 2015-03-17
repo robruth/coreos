@@ -28,7 +28,7 @@
 
 5. Spin up ELK container to forward CoreOS syslog to
 
-6. Copy pxe-cloud-config.yml to Aapche/Nginx root and edit accordingly
+6. Copy pxe-cloud-config.yml to Apache/Nginx root and edit accordingly
 
 7. Set coreos vm's to boot from net
 
