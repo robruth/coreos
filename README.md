@@ -1,4 +1,4 @@
-## Requirments:
+## Requirements:
 
 **Running PXE + DHCP server + Nginx/Apache. There are plenty of FAQ's on this so not going to cover. Link for the lazy:**
 
