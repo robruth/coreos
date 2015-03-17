@@ -20,7 +20,7 @@
 
 1. Spin up Ubuntu 14.04 VM and config base pxe/dhcp server. You will need to edit VMware Fsuion networking to use external dhcp/pxe. Info here:
 
-> http://thornelabs.net/2013/09/05/create-vmware-fusion-pxe-boot-environment-and-use-kickstart-profiles-to-create-ubuntu-virtual-machines.html
+http://thornelabs.net/2013/09/05/create-vmware-fusion-pxe-boot-environment-and-use-kickstart-profiles-to-create-ubuntu-virtual-machines.html
 
 2. Download CoreOS image to pxe
 
