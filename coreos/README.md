@@ -1,5 +1,5 @@
 ## CoreOS PXE 
 
-*edit discovery, new relic and ssh*
+*edit discovery, new relic, elk and ssh*
 
 *sample fleet services in ./fleet*
