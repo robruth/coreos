@@ -1,0 +1,19 @@
+DEFAULT menu
+PROMPT 0
+MENU TITLE Cobbler | http://www.cobblerd.org/
+TIMEOUT 200
+TOTALTIMEOUT 6000
+ONTIMEOUT local
+
+LABEL local
+        MENU LABEL (local)
+        MENU DEFAULT
+        LOCALBOOT -1
+
+LABEL CoreOS
+        kernel /images/CoreOS/coreos_production_pxe.vmlinuz
+        MENU LABEL CoreOS
+        append initrd=/images/CoreOS/coreos_production_pxe_image.cpio.gz ksdevice=bootif lang=  kssendmac text  cloud-config-url=http://192.168.155.222/pxe-cloud-config.yml
+        ipappend 2
+
+MENU end

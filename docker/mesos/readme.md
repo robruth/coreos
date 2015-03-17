@@ -1,0 +1,1 @@
+docker run -i -t --name mesos --privileged --net=host -p 5050:5050 -p 5051:5051 -p 8080:8080 -p 9090:9090 -v /var/lib/docker/btrfs/subvolumes:/var/lib/docker/btrfs/subvolumes -v /var/run/docker.sock:/var/run/docker.sock -v /sys:/sys -e HOSTNAME=`hostname` -e HOST_IP=`ip route get 8.8.8.8 | awk 'NR==1 {print $NF}'` -e ZK_IP=192.168.155.100 robruth/mesos /bin/bash

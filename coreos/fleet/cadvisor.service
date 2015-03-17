@@ -1,0 +1,45 @@
+[Unit]
+Description=cAdvisor
+Documentation=https://github.com/google/cadvisor
+Requires=docker.service
+After=docker.service
+Wants=skydns.service
+After=skydns.service
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=10
+
+Environment="RELEASE=0.8.0"
+Environment="INFLUXDB_DATABASE_HOST=192.168.155.222"
+Environment="INFLUXDB_DATABASE_USER=root"
+Environment="INFLUXDB_DATABASE_PASS=root"
+
+TimeoutStartSec=5m
+ExecStartPre=-/usr/bin/docker kill cadvisor
+ExecStartPre=-/usr/bin/docker rm cadvisor
+ExecStartPre=/usr/bin/docker pull google/cadvisor:${RELEASE}
+
+ExecStart=/usr/bin/docker run \
+  --name cadvisor \
+  -p 8081:8080 \
+  --hostname %m \
+  --volume /var/run:/var/run:rw \
+  --volume /sys:/sys:ro \
+  --volume /var/lib/docker:/var/lib/docker:ro \
+    google/cadvisor:${RELEASE} \
+      --logtostderr \
+      --storage_driver=influxdb \
+      --storage_driver_host=${INFLUXDB_DATABASE_HOST}:8086 \
+      --storage_driver_db=cadvisor \
+      --storage_driver_user=${INFLUXDB_DATABASE_USER} \
+      --storage_driver_password=${INFLUXDB_DATABASE_PASS} \
+      --housekeeping_interval=5s \
+      --global_housekeeping_interval=10s
+
+[X-Fleet]
+Global=true
+
+[Install]
+WantedBy=multi-user.target

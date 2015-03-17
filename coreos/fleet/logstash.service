@@ -1,0 +1,13 @@
+[Unit]
+Description=logstash
+
+[Service]
+EnvironmentFile=/etc/environment
+ExecStartPre=/usr/bin/docker pull robruth/logstash
+ExecStart=/usr/bin/docker run --rm --name logstash -p 10101:10101 -p 1515:1515 robruth/logstash
+ExecStartPost=/usr/bin/etcdctl set /logstash/host ${COREOS_PUBLIC_IPV4}
+ExecStop=/usr/bin/docker kill logstash
+ExecStopPost=/usr/bin/etcdctl rm --dir --recursive /logstash
+
+[X-Fleet]
+X-Conflicts=elasticsearch.service

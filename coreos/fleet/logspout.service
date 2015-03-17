@@ -1,0 +1,32 @@
+[Unit]
+Description=Docker container log shipping agent
+Documentation=https://github.com/gliderlabs/logspout
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5
+
+EnvironmentFile=/etc/environment
+Environment="RELEASE=latest"
+
+TimeoutStartSec=5m
+ExecStartPre=-/usr/bin/docker kill logspout
+ExecStartPre=-/usr/bin/docker rm logspout
+ExecStartPre=/usr/bin/docker pull gliderlabs/logspout:${RELEASE}
+
+ExecStart=/usr/bin/docker run \
+  --name logspout \
+  --hostname %m \
+  --volume /var/run/docker.sock:/tmp/docker.sock \
+    gliderlabs/logspout:${RELEASE} \
+      syslog://192.168.155.222:1515
+
+[X-Fleet]
+MachineMetadata="role=leader"
+Global=true
+
+[Install]
+WantedBy=multi-user.target

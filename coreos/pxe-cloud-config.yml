@@ -1,0 +1,164 @@
+#cloud-config
+coreos:
+  fleet:
+    public-ip: $public_ipv4
+    metadata: region=sjc,provider=hightail
+  etcd:
+    discovery: https://discovery.etcd.io/<key>
+    election_timeout: 7500
+    heartbeat_interval: 1500
+    # multi-region and multi-cloud deployments need to use $public_ipv4
+    # We'll actually fill this in using fixup_etc.sh (see below)
+    # addr: $ht_privatenet_ipv4:4001
+    # peer-addr: $ht_privatenet_ipv4:7001
+  update:
+    reboot-strategy: etcd-lock
+
+  units:
+    - name: etcd.service
+      command: start
+    - name: fleet.service
+      command: start
+    - name: iptables.service
+      command: start
+      content: |
+        [Unit]
+        Description=Packet Filtering Framework
+        DefaultDependencies=no
+        After=systemd-sysctl.service
+        Before=sysinit.target
+ 
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/sbin/iptables-restore /etc/iptables.rules
+        ExecReload=/usr/sbin/iptables-restore /etc/iptables.rules
+        ExecStop=/usr/sbin/iptables --flush
+        RemainAfterExit=yes
+ 
+        [Install]
+        WantedBy=multi-user.target
+    - name: ht_ip_env.service
+      command: start
+      content: |
+        [Unit]
+        Description=Configure /etc/environment variables for Hightail networks on etcd
+        After=network-online.target
+        Requires=ntpd.service network-online.target
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/root/bin/ht_ips.sh
+        ExecStart=/root/bin/fixup_etc.sh
+    
+    - name: format-ephemeral.service
+      command: start
+      content: |
+        [Unit]
+        Description=Formats the ephemeral drive
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/wipefs -f /dev/sda1
+        ExecStart=/usr/sbin/mkfs.btrfs -f /dev/sda1
+
+    - name: var-lib-docker.mount
+      command: start
+      content: |
+        [Unit]
+        Description=Mount ephemeral to /var/lib/docker
+        Requires=format-ephemeral.service
+        After=format-ephemeral.service
+        Before=docker.service
+
+        [Mount]
+        What=/dev/sda1
+        Where=/var/lib/docker
+        Type=btrfs
+
+    - name: newrelic-client.service
+      command: start
+      content: |
+        [Unit]
+        Description=newrelic-client
+        
+        [Service]
+        Restart=always
+        TimeoutStartSec=20m
+        ExecStartPre=-/usr/bin/docker rm -f newrelic-client
+        ExecStart=/bin/bash -c 'HOSTNAME=`/usr/bin/hostname`; docker run --name newrelic-client --rm --env="NEW_RELIC_LICENSE_KEY=<new_relic_key>" -h $HOSTNAME uzyexe/newrelic'
+        ExecStop=/usr/bin/docker kill newrelic-client
+         
+        [Install]
+        WantedBy=multi-user.target
+
+write_files:
+  - path: /root/bin/fixup_etc.sh
+    permissions: 0755
+    content: |
+      #!/bin/bash -e
+      source /etc/environment
+      mkdir -p /etc/systemd/system/etcd.service.d
+      cat > /etc/systemd/system/etcd.service.d/50-speakit.conf <<EOF
+      [Service]
+      Environment="ETCD_ADDR=${HT_PRIVATENET_IPV4}:4001"
+      Environment="ETCD_PEER_ADDR=${HT_PRIVATENET_IPV4}:7001"
+      EOF
+      systemctl daemon-reload
+      systemctl restart etcd.service
+
+  - path: /root/bin/ht_ips.sh
+    permissions: 0755
+    content: |
+      #!/bin/bash
+      for i in `ip a | grep -- 'inet ' | awk '{print $2}' | grep -v '^127.' | cut -d'/' -f1`; do
+        case `echo $i | cut -d. -f1` in
+          "192")
+            echo "Writing COREOS_PRIVATE_IPV4=$i to /etc/environment"
+            echo "COREOS_PRIVATE_IPV4=$i" > /etc/environment
+            echo "Writing COREOS_PUBLIC_IPV4=$i to /etc/environment"
+            echo "COREOS_PUBLIC_IPV4=$i" >> /etc/environment
+            echo "Writing HT_SERVICENET_IPV4=$i to /etc/environment"
+            echo "HT_SERVICENET_IPV4=$i" >> /etc/environment
+            echo "Writing HT_PRIVATENET_IPV4=$i to /etc/environment"
+            echo "HT_PRIVATENET_IPV4=$i" >> /etc/environment
+            echo "Writing HT_ETCDNET_IPV4=$i to /etc/environment"
+            echo "HT_ETCDNET_IPV4=$i" >> /etc/environment
+            echo "Writing HT_PUBLICNET_IPV4=$i to /etc/environment"
+            echo "HT_PUBLICNET_IPV4=$i" >> /etc/environment
+            ;;
+        esac
+      done
+  #- path: /var/lib/iptables/rules-save
+  - path: /etc/iptables.rules 
+    permissions: 0644
+    owner: root:root
+    content: |
+      *filter
+      :INPUT DROP [0:0]
+      :FORWARD DROP [0:0]
+      :OUTPUT ACCEPT [0:0]
+      -A INPUT -i lo -j ACCEPT
+      -A INPUT -i eno16777736 -j ACCEPT
+      -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 22 -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 80 -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 443 -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 2181 -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 2888 -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 3888 -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 5050 -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 5051 -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 9090 -j ACCEPT
+      -A INPUT -p icmp -m icmp --icmp-type 0 -j ACCEPT
+      -A INPUT -p icmp -m icmp --icmp-type 3 -j ACCEPT
+      -A INPUT -p icmp -m icmp --icmp-type 11 -j ACCEPT
+      COMMIT
+users:
+- name: core
+  groups:
+    - sudo
+    - docker
+  ssh-authorized-keys:
+    - ssh-rsa <rsa_key> 

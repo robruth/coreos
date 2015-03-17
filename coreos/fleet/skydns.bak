@@ -1,0 +1,29 @@
+[Unit]
+Description=skydns
+Requires=skydns.install.service
+Wants=etcd.service
+Requires=docker.service
+After=skydns.install.service
+After=etcd.service
+After=docker.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ReadOnlyDirectories=/etc
+EnvironmentFile=/etc/environment
+ExecStartPre=/usr/bin/etcdctl set /skydns/local/cluster/hosts/%25m '{"host":"${COREOS_PRIVATE_IPV4}"}'
+ExecStart=/var/lib/skydns/bin/skydns -addr 172.17.42.1:5333 -verbose=true -discover=true -domain cluster.local. -local %25m.hosts.cluster.local
+ExecStopPost=/usr/bin/etcdctl rm /skydns/local/cluster/hosts/%m
+PermissionsStartOnly=true
+ExecStartPre=-/sbin/iptables -D INPUT -p udp --dport 5333 -j ACCEPT
+ExecStartPre=-/sbin/iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5333
+ExecStartPre=/sbin/iptables -A INPUT -p udp --dport 5333 -j ACCEPT
+ExecStartPre=/sbin/iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5333
+ExecStopPost=/sbin/iptables -D INPUT -p udp --dport 5333 -j ACCEPT
+ExecStopPost=/sbin/iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5333
+
+[Install]
+WantedBy=multi-user.target
+

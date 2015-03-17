@@ -1,0 +1,31 @@
+input {
+  lumberjack {
+    port => 10101
+    ssl_certificate => "/opt/logstash/ssl/logstash-forwarder.crt"
+    ssl_key => "/opt/logstash/ssl/logstash-forwarder.key"
+  }
+}
+
+output {
+  elasticsearch {
+    protocol => "http"
+    host => "{{getv "/elasticsearch/host"}}"
+    port => 9200
+  }
+}
+
+input {
+  tcp {
+    port  => 1515
+    codec => json_lines
+    type  => "systemd"
+  }
+}
+
+filter {
+  if [type] == "systemd" {
+    mutate { rename => [ "MESSAGE", "message" ] }
+    mutate { rename => [ "_SYSTEMD_UNIT", "program" ] }
+  }
+}
+

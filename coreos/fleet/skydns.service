@@ -1,0 +1,23 @@
+[Unit]
+Description=skydns
+Requires=skydns.install.service
+Wants=etcd.service
+Requires=docker.service
+After=skydns.install.service
+After=etcd.service
+After=docker.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ReadOnlyDirectories=/etc
+EnvironmentFile=/etc/environment
+ExecStartPre=/usr/bin/etcdctl set /skydns/local/cluster/hosts/$HOSTNAME '{"host":"${COREOS_PRIVATE_IPV4}"}'
+ExecStart=/var/lib/skydns/bin/skydns -addr 172.17.42.1:53 -nameservers=8.8.8.8:53,8.8.4.4:53 -verbose=true -discover=true -domain cluster.local. -local %m.hosts.cluster.local
+ExecStopPost=/usr/bin/etcdctl rm /skydns/local/cluster/hosts/$HOSTNAME
+PermissionsStartOnly=true
+
+[Install]
+WantedBy=multi-user.target
+
