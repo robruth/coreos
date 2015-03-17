@@ -19,6 +19,15 @@ coreos:
       command: start
     - name: fleet.service
       command: start
+
+    - name: docker.service
+      command: start
+      content: |
+        .include /usr/lib/systemd/system/docker.service
+        [Service]
+        ExecStart=
+        ExecStart=/usr/bin/docker -d -s=btrfs -r=false -H fd:// --dns=172.17.42.1 --dns-search=hightail.local
+
     - name: iptables.service
       command: start
       content: |
@@ -87,9 +96,63 @@ coreos:
         Restart=always
         TimeoutStartSec=20m
         ExecStartPre=-/usr/bin/docker rm -f newrelic-client
-        ExecStart=/bin/bash -c 'HOSTNAME=`/usr/bin/hostname`; docker run --name newrelic-client --rm --env="NEW_RELIC_LICENSE_KEY=<new_relic_key>" -h $HOSTNAME uzyexe/newrelic'
+        ExecStart=/bin/bash -c 'HOSTNAME=`/usr/bin/hostname`; docker run --name newrelic-client --rm --env="NEW_RELIC_LICENSE_KEY=<api_key>" -h $HOSTNAME uzyexe/newrelic'
         ExecStop=/usr/bin/docker kill newrelic-client
          
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: journalctl.logstash.service
+      command: start
+      content: |
+        [Unit]
+        Description=Send Journalctl to Syslog
+
+        [Service]
+        TimeoutStartSec=0
+        ExecStart=/bin/sh -c '/usr/bin/journalctl -o json -f | /usr/bin/ncat 192.168.155.222 1515'
+        Restart=always
+        RestartSec=5s
+
+        [Install]
+        Global=true
+
+    - name: skydns.install.service
+      command: start
+      content: |
+        [Unit]
+        Description=Install SkyDNS
+        [Service]
+        Type=oneshot
+        RemainAfterExit=true
+        ExecStart=-/usr/bin/mkdir -p /var/lib/skydns/bin
+        ExecStart=-/usr/bin/curl -s -o /var/lib/skydns/bin/skydns http://192.168.155.222/skydns
+        ExecStart=/usr/bin/chown -R skydns:skydns /var/lib/skydns
+        ExecStart=/usr/bin/chmod +x /var/lib/skydns/bin/skydns
+
+    - name: skydns.service
+      command: start
+      content: |
+        [Unit]
+        Description=skydns
+        Requires=skydns.install.service
+        Wants=etcd.service
+        Requires=docker.service
+        After=skydns.install.service
+        After=etcd.service
+        After=docker.service
+
+        [Service]
+        Type=simple
+        Restart=always
+        RestartSec=5
+        ReadOnlyDirectories=/etc
+        EnvironmentFile=/etc/environment
+        ExecStartPre=/usr/bin/etcdctl set /skydns/local/hightail/hosts/${MACHINE_ID} {"host":"${COREOS_PRIVATE_IPV4}"}
+        ExecStart=/var/lib/skydns/bin/skydns -addr 172.17.42.1:53 -nameservers=8.8.8.8:53,8.8.4.4:53 -verbose=true -discover=true -domain hightail.local. -local %m.hosts.cluster.local
+        ExecStopPost=/usr/bin/etcdctl rm /skydns/local/hightail/hosts/%25m
+        PermissionsStartOnly=true
+
         [Install]
         WantedBy=multi-user.target
 
@@ -127,10 +190,11 @@ write_files:
             echo "HT_ETCDNET_IPV4=$i" >> /etc/environment
             echo "Writing HT_PUBLICNET_IPV4=$i to /etc/environment"
             echo "HT_PUBLICNET_IPV4=$i" >> /etc/environment
+            echo "MACHINE_ID=$(cat /etc/machine-id)" >> /etc/environment
             ;;
         esac
       done
-  #- path: /var/lib/iptables/rules-save
+
   - path: /etc/iptables.rules 
     permissions: 0644
     owner: root:root
@@ -140,6 +204,7 @@ write_files:
       :FORWARD DROP [0:0]
       :OUTPUT ACCEPT [0:0]
       -A INPUT -i lo -j ACCEPT
+      -A INPUT -i docker0 -j ACCEPT
       -A INPUT -i eno16777736 -j ACCEPT
       -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
       -A INPUT -p tcp -m tcp --dport 22 -j ACCEPT
@@ -149,16 +214,36 @@ write_files:
       -A INPUT -p tcp -m tcp --dport 2888 -j ACCEPT
       -A INPUT -p tcp -m tcp --dport 3888 -j ACCEPT
       -A INPUT -p tcp -m tcp --dport 5050 -j ACCEPT
+      -A INPUT -p tcp -m tcp --dport 4001 -j ACCEPT
       -A INPUT -p tcp -m tcp --dport 5051 -j ACCEPT
       -A INPUT -p tcp -m tcp --dport 9090 -j ACCEPT
       -A INPUT -p icmp -m icmp --icmp-type 0 -j ACCEPT
       -A INPUT -p icmp -m icmp --icmp-type 3 -j ACCEPT
       -A INPUT -p icmp -m icmp --icmp-type 11 -j ACCEPT
+      -A FORWARD -i docker0 -o eno16777736 -j ACCEPT
+      -A FORWARD -o docker0 -i eno16777736 -j ACCEPT
       COMMIT
+
+  - path: /etc/docker.env
+    permissions: 0644
+    owner: root:root
+    content: |
+      DOCKER_BRIDGE_IP=10.0.42.1
+
+  - path: /etc/skydns.env
+    permissions: 0644
+    owner: root:root
+    content: |
+      SKYDNS_DOMAIN=skydns.dev
+      SKYDNS_NAMESERVERS=8.8.8.8:53,8.8.4.4:53
+      SKYDNS_ADDR=0.0.0.0:53
+
 users:
 - name: core
   groups:
     - sudo
     - docker
   ssh-authorized-keys:
-    - ssh-rsa <rsa_key> 
+    - ssh-rsa <ssh-key> 
+- name: skydns
+  system: true      

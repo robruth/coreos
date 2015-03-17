@@ -4,7 +4,7 @@
 
 > https://www.howtoforge.com/ubuntu-14.10-pxe-server-installation
 
-*See example dhpcd + pxe configs and modify file locations/subnets accordingly*
+*See example dhpcd + pxe in ./configs and modify file locations/subnets accordingly*
 
 **ELK server for central logging**
 
